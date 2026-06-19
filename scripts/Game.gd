@@ -161,6 +161,11 @@ var last_power_tier : int = 0     # detect crossing into a new ability tier
 var fx_layer    : Node2D          # top layer for bomb/laser/gravity effects
 var effects     : Array = []      # active visual effects
 var praise_pops : Array = []      # active rainbow per-letter praise popups (NICE!, etc.)
+# Center-banner queue: line-clear praise, BOARD CLEAR, biome name all share the same
+# center strip, so they're shown one-after-another (a quick cascade) instead of mashing
+# on top of each other. Drained in _process so nothing fires after a scene change.
+var banner_queue : Array = []     # [{fn: Callable, slot: float}, …]
+var _banner_t    : float = 0.0    # time left before the center strip is free for the next
 
 # Drag-hover haptic: buzz once each time we move onto a new valid placement
 var last_hover_snap  : Vector2i = Vector2i(-99, -99)
@@ -342,6 +347,7 @@ func _process(delta: float) -> void:
 		fx_layer.queue_redraw()
 	# Moving-rainbow praise letters (NICE!, BOARD CLEAR!, …)
 	_animate_praise(delta)
+	_drain_banner_queue(delta)
 	# The rescue prompt lives on fx_layer and animates (pulse + countdown), so keep it
 	# repainting while active — and once more when it ends so the banner clears.
 	if rescue_active or _was_rescue:
@@ -420,7 +426,7 @@ func _spawn_pieces() -> void:
 	# ~10k upward the board stops being constantly emptied for you.
 	var forced_clear : Array = []
 	var gift_chance : float = 1.0 if sets_given < EARLY_CLEAR_SETS \
-		else lerpf(0.70, 0.03, _difficulty())
+		else lerpf(0.15, 0.0, _difficulty())
 	if randf() < gift_chance:
 		forced_clear = _pick_board_clear_shape()
 
@@ -459,16 +465,16 @@ func _spawn_pieces() -> void:
 		_try_game_over()
 
 func _progression() -> float:
-	return clampf((sets_given - 2) / 10.0, 0.0, 1.0)
+	return clampf((sets_given - 1) / 3.0, 0.0, 1.0)
 
 # Run difficulty 0..1. Stays 0 through the (already well-tuned) early game, then
 # ramps up so the generosity crutches fade and it gets genuinely hard. Driven by the
 # MAX of two ramps — sets played AND score — so a fast high-scoring run gets hard on
 # schedule (the 50-100k window was way too easy when difficulty tracked sets alone).
-const DIFF_START := 12.0       # sets before the sets-ramp starts climbing (= early phase)
-const DIFF_LEN   := 45.0       # sets over which the sets-ramp climbs to max
-const DIFF_SCORE_START := 6000.0   # score where the score-ramp begins (earlier so 5k-10k bites)
-const DIFF_SCORE_LEN   := 52000.0  # score span to max (~58k → fully hard by then)
+const DIFF_START := 2.0        # sets before the sets-ramp starts climbing (= early phase)
+const DIFF_LEN   := 14.0       # sets over which the sets-ramp climbs to max (bites fast)
+const DIFF_SCORE_START := 1000.0   # score where the score-ramp begins (bites very early)
+const DIFF_SCORE_LEN   := 9000.0   # score span to max (~10k → fully hard)
 func _difficulty() -> float:
 	var by_sets  := (float(sets_given) - DIFF_START) / DIFF_LEN
 	var by_score := (float(score) - DIFF_SCORE_START) / DIFF_SCORE_LEN
@@ -476,10 +482,43 @@ func _difficulty() -> float:
 
 # Deep-run pressure that keeps climbing AFTER _difficulty() has maxed (score 80k→300k),
 # so a long high-score run keeps tightening instead of plateauing at "max" difficulty.
-const DEEP_START := 80000.0
-const DEEP_LEN   := 220000.0
+const DEEP_START := 20000.0
+const DEEP_LEN   := 130000.0
 func _deep() -> float:
 	return clampf((float(score) - DEEP_START) / DEEP_LEN, 0.0, 1.0)
+
+# How often the spawner deliberately hands a crowding, hard-to-place piece instead of
+# a helpful one. Climbs with both ramps so a long high-score run keeps getting meaner;
+# capped below 1.0 so there's always a sliver of breathing room (and the rescue power).
+func _hard_bias() -> float:
+	return clampf(lerpf(0.0, 0.62, _difficulty()) + lerpf(0.0, 0.26, _deep()), 0.0, 0.82)
+
+# The meanest fitting piece: the more cells it has and the FEWER places it fits, the
+# more it crowds the board and strands gaps. Small random jitter keeps it from handing
+# the exact same shape every time. Returns [] only if nothing fits at all.
+func _pick_adversarial_shape() -> Array:
+	var any_fit  : Array = []
+	var best     : Array = []
+	var best_rank : float = INF
+	for s in SHAPES:
+		var fit_count := 0
+		for r in GRID_ROWS:
+			for c in GRID_COLS:
+				if grid.can_place(s, r, c):
+					fit_count += 1
+		if fit_count == 0:
+			continue
+		any_fit.append(s)
+		# Lower rank = meaner: few placements, many cells. Jitter breaks ties softly.
+		var rank := float(fit_count) - float(s.size()) * 2.5 + randf() * 1.5
+		if rank < best_rank:
+			best_rank = rank
+			best = s
+	if not best.is_empty():
+		return best
+	if not any_fit.is_empty():
+		return any_fit[randi() % any_fit.size()]
+	return []
 
 # Drain toward a board clear: early in the run, or when it's been too long since
 # the last one. The drought threshold GROWS with difficulty so board-clear bailouts
@@ -489,7 +528,7 @@ func _wants_clear() -> bool:
 	# difficulty, then keeps growing into the deep game so the board stays full and
 	# the pressure is real at high scores.
 	var drought : int = int(round(
-		lerpf(float(CLEAR_DROUGHT), 20.0, _difficulty()) + lerpf(0.0, 8.0, _deep())))
+		lerpf(float(CLEAR_DROUGHT), 70.0, _difficulty()) + lerpf(0.0, 40.0, _deep())))
 	return sets_given < EARLY_CLEAR_SETS or sets_since_clear >= drought
 
 # Fraction of the board currently filled (0..1).
@@ -517,12 +556,12 @@ func _fill_pool() -> Array:
 # to 0% by move ~45. Smart picks complete lines (multi-line wins outright);
 # when nothing clears yet, hand out big "builder" pieces so the board fills
 # fast and double/triple clears set themselves up.
-const SMART_FADE_MOVES := 45.0
+const SMART_FADE_MOVES := 10.0
 
 # Early game = a fast "clear the whole board" puzzle. For the first few sets we
 # keep the board SMALL (no big builder dumps) and try to hand the player a piece
 # that can empty the board, so full board-clears happen constantly up front.
-const EARLY_CLEAR_SETS   := 8
+const EARLY_CLEAR_SETS   := 2
 const EARLY_CLEAR_CHANCE := 1.0
 # After this many sets with no full board clear, briefly favour small clearing
 # pieces again (a "drain") to set up another board clear — keeps board clears
@@ -572,7 +611,7 @@ func _pick_shape() -> Array:
 		if not fill.is_empty():
 			return fill
 		return _pick_helpful_shape()
-	var smart_p : float = clampf(0.85 * (1.0 - float(placements) / SMART_FADE_MOVES), 0.0, 0.85)
+	var smart_p : float = clampf(0.35 * (1.0 - float(placements) / SMART_FADE_MOVES), 0.0, 0.35)
 	if randf() < smart_p:
 		var smart := _pick_combo_shape()
 		if not smart.is_empty():
@@ -594,6 +633,13 @@ func _pick_shape() -> Array:
 			if not fitting.is_empty():
 				return fitting[randi() % fitting.size()]
 		return _pick_helpful_shape()
+	# Adversarial pressure: the deeper the run, the more often we deliberately hand a
+	# crowding, hard-to-place piece instead of a helpful one. This is the main reason
+	# high scores stay hard now instead of plateauing into a comfortable groove.
+	if randf() < _hard_bias():
+		var mean := _pick_adversarial_shape()
+		if not mean.is_empty():
+			return mean
 	if randf() < _progression():
 		return SHAPES[randi() % SHAPES.size()]
 	return _pick_helpful_shape()
@@ -1342,6 +1388,9 @@ func _advance_theme() -> void:
 	_show_theme_popup(THEMES[theme_idx]["name"])
 
 func _show_theme_popup(theme_name: String) -> void:
+	_enqueue_banner(_spawn_theme_banner.bind(theme_name), 1.3)
+
+func _spawn_theme_banner(theme_name: String) -> void:
 	var accent : Color = THEMES[theme_idx]["accent"]
 	var cy := 360.0   # over the board centre — a real "you've arrived" moment
 
@@ -2586,6 +2635,23 @@ const PRAISE_WORDS := {
 	5: ["LEGENDARY!", "GODLIKE!", "UNSTOPPABLE!", "COSMIC!", "MYTHIC!"],
 }
 
+# ── Center-banner queue ───────────────────────────────────────────────────────
+# Big center messages (clear praise, BOARD CLEAR, biome name) share one screen strip,
+# so they're queued and shown one-after-another (a quick cascade) rather than stacked.
+# `slot` = the gap before the NEXT banner pops (not the banner's full lifetime).
+func _enqueue_banner(fn: Callable, slot: float) -> void:
+	banner_queue.append({"fn": fn, "slot": slot})
+
+func _drain_banner_queue(delta: float) -> void:
+	if _banner_t > 0.0:
+		_banner_t -= delta
+	if _banner_t <= 0.0 and not banner_queue.is_empty():
+		var b : Dictionary = banner_queue.pop_front()
+		var fn : Callable = b["fn"]
+		if fn.is_valid():
+			fn.call()
+		_banner_t = float(b["slot"])
+
 func _show_clear_text(lines: int) -> void:
 	if lines == 0:
 		return
@@ -2612,7 +2678,8 @@ func _show_praise(tier: int) -> void:
 	var bounce : float = [1.22, 1.32, 1.44, 1.56, 1.68][tier - 1]
 	var hold   : float = [0.50, 0.65, 0.85, 1.05, 1.30][tier - 1]
 	var amp    : float = [2.5, 3.5, 4.5, 5.5, 6.5][tier - 1]
-	_spawn_praise(text, fsize, bounce, hold, amp)
+	# Queue it so a same-move clear + board-clear + biome banner cascade instead of mashing
+	_enqueue_banner(_spawn_praise.bind(text, fsize, bounce, hold, amp), clampf(0.30 + hold, 0.5, 0.9))
 
 # Sum of per-character advance widths at a given size (for centring the letters).
 func _measure_word(text: String, fsize: int) -> Dictionary:
@@ -2725,6 +2792,9 @@ func _animate_praise(delta: float) -> void:
 	praise_pops = alive
 
 func _show_board_clear_popup() -> void:
+	_enqueue_banner(_spawn_board_clear_banner, 0.95)
+
+func _spawn_board_clear_banner() -> void:
 	# Big rainbow bubble "BOARD CLEAR!" (same moving-rainbow letters as the praise text)
 	_spawn_praise("BOARD CLEAR!", 74, 1.58, 1.15, 6.0)
 	# Small gold "+points" floater under it

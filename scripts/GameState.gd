@@ -227,7 +227,7 @@ func cloud_snapshot() -> Dictionary:
 
 # Merge a cloud snapshot into local state — field-wise MAX so a high score on any
 # device always survives; unlocks/skins union; tutorial flag OR'd. Then persist.
-func apply_cloud_profile(d: Dictionary) -> void:
+func apply_cloud_profile(d: Dictionary, restoring: bool = false) -> void:
 	best_score        = maxi(best_score,        int(d.get("best_score", 0)))
 	player_xp         = maxi(player_xp,         int(d.get("player_xp", 0)))
 	games_played      = maxi(games_played,      int(d.get("games_played", 0)))
@@ -250,10 +250,12 @@ func apply_cloud_profile(d: Dictionary) -> void:
 		for v in ss:
 			if not skins_seen.has(v):
 				skins_seen.append(v)
-	if player_name == "":
-		var nm := str(d.get("player_name", ""))
-		if nm != "":
-			player_name = nm
+	# Name: on a RESTORE (existing account) the account's name is the source of
+	# truth — bring it back even over a local placeholder like "PLAYER". On a
+	# first-time backup (linking a guest) only fill it if we don't have one yet.
+	var nm := str(d.get("player_name", ""))
+	if nm != "" and (restoring or player_name == "" or player_name == "PLAYER"):
+		player_name = nm
 	_save()
 
 # Lifetime stats (profile card → stats panel, achievement quest values)

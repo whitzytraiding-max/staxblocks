@@ -12,6 +12,16 @@ const COLORS: Array = [
 	Color(0.97, 0.88, 0.32),
 ]
 
+# Per-letter colours for the STAX logo, matched to the app-icon / title artwork
+# (S cyan, T pink, A green, X orange). Kept separate from COLORS so the orbs and
+# falling pieces are unaffected.
+const LOGO_COLORS: Array = [
+	Color("20ceef"),  # S
+	Color("ff3d7f"),  # T
+	Color("34d866"),  # A
+	Color("ff8c26"),  # X
+]
+
 const ORB_COUNT := 10
 const FALL_COUNT := 12
 
@@ -72,8 +82,19 @@ func _ready() -> void:
 
 	# First open: only the animated background + name prompt. The menu builds
 	# (and the logo intro plays) after the name is confirmed.
+	# A RETURNING player must reload straight into the menu and never be re-asked
+	# for a name — the "WHAT'S YOUR NAME?" box is only for a genuinely brand-new
+	# player. So if there's any saved progress, a finished tutorial, or a signed-in
+	# account, skip the prompt even when the name field somehow came back empty
+	# (a restore fills the real name in the background; _on_auth_signed_in refreshes).
 	if GameState.player_name.is_empty():
-		_build_name_prompt()
+		var is_returning := GameState.games_played > 0 or GameState.best_score > 0 \
+			or GameState.tutorial_done or Auth.is_signed_in()
+		if is_returning:
+			GameState.set_player_name("PLAYER")   # quiet fallback; real name returns on restore
+			_build_menu()
+		else:
+			_build_name_prompt()
 	else:
 		_build_menu()
 	Sfx.update_music()
@@ -177,9 +198,13 @@ func _build_logo() -> void:
 		var lbl := Label.new()
 		lbl.text = text[i]
 		lbl.add_theme_font_size_override("font_size", 96)
-		lbl.add_theme_color_override("font_color", COLORS[i % COLORS.size()])
+		lbl.add_theme_color_override("font_color", LOGO_COLORS[i % LOGO_COLORS.size()])
 		lbl.add_theme_color_override("font_outline_color", Color(0.05, 0.04, 0.09))
 		lbl.add_theme_constant_override("outline_size", 14)
+		# Chunky 3D drop, matched to the logo artwork (extruded dark base #17103a)
+		lbl.add_theme_color_override("font_shadow_color", Color("17103a"))
+		lbl.add_theme_constant_override("shadow_offset_x", 0)
+		lbl.add_theme_constant_override("shadow_offset_y", 10)
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		lbl.size = Vector2(lw, 120)
 		lbl.pivot_offset = Vector2(lw * 0.5, 60)
@@ -508,7 +533,7 @@ func _build_profile() -> void:
 	profile_pin.draw.connect(func():
 		var t := _rank_tier(GameState.my_global_rank)
 		if t > 0:
-			_draw_pin(profile_pin, Vector2(15, 15), 12.0, t))
+			_draw_pin(profile_pin, Vector2(15, 18), 10.0, t))
 	card.add_child(profile_pin)
 
 	profile_name = Label.new()
@@ -1096,6 +1121,7 @@ func _open_achievements() -> void:
 # ── Biomes gallery ───────────────────────────────────────────────────────────
 # The whole gallery is gated until the player reaches this level.
 const BIOMES_UNLOCK_LEVEL := 3
+const LEADERBOARD_UNLOCK_LEVEL := 7
 
 # Rarity tiers (mirror GameState.SKIN_UNLOCK). Indices are skin ids; color tints
 # the section header so rarity reads at a glance.
@@ -1588,7 +1614,7 @@ func _make_rank_pin(tier: int) -> Control:
 	var c := Control.new()
 	c.custom_minimum_size = Vector2(32, 32)   # fixed slot keeps the rank column aligned
 	if tier > 0:
-		c.draw.connect(func(): _draw_pin(c, Vector2(16, 20), 11.0, tier))
+		c.draw.connect(func(): _draw_pin(c, Vector2(16, 16), 9.0, tier))
 	return c
 
 func _draw_pin(canvas: Control, center: Vector2, r: float, tier: int) -> void:
@@ -1786,14 +1812,21 @@ func _build_buttons() -> void:
 		_open_achievements())
 	fade_in.append(ach)
 
-	var leaderboard := _make_chunky_button("LEADERBOARD", Color(0.95, 0.75, 0.25), 22)
+	var lb_ok := GameState.get_level() >= LEADERBOARD_UNLOCK_LEVEL
+	var leaderboard := _make_chunky_button(
+		"LEADERBOARD" if lb_ok else "LEADERBOARD   LV " + str(LEADERBOARD_UNLOCK_LEVEL),
+		Color(0.95, 0.75, 0.25) if lb_ok else Color(0.34, 0.34, 0.42), 22)
 	leaderboard.size = Vector2(280, 58)
 	leaderboard.position = Vector2(67, 660 if has_run else 598)
 	leaderboard.pivot_offset = leaderboard.size * 0.5
 	ui.add_child(leaderboard)
-	leaderboard.pressed.connect(func():
-		Sfx.play_click()
-		_open_leaderboard())
+	if lb_ok:
+		leaderboard.pressed.connect(func():
+			Sfx.play_click()
+			_open_leaderboard())
+	else:
+		_add_lock_badge(leaderboard)
+		leaderboard.pressed.connect(_deny_button.bind(leaderboard))
 	fade_in.append(leaderboard)
 
 	var biomes_ok := GameState.get_level() >= BIOMES_UNLOCK_LEVEL
@@ -2210,11 +2243,16 @@ func _on_auth_failed(reason: String) -> void:
 		account_status.add_theme_color_override("font_color", Color(1, 0.6, 0.4))
 
 func _on_auth_signed_out() -> void:
-	if is_instance_valid(account_status):
-		account_status.text = "Signed out"
-		account_status.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 	if is_instance_valid(profile_name):
 		_refresh_profile()
+	# Drop back to the account screen's signed-out state (the sign-in options),
+	# rather than leaving the signed-in layout up.
+	if account_overlay != null and is_instance_valid(account_overlay):
+		_close_account()
+		_open_account()
+		if is_instance_valid(account_status):
+			account_status.text = "Signed out"
+			account_status.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 
 func _open_settings() -> void:
 	settings_box.visible = true

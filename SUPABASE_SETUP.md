@@ -165,6 +165,13 @@ begin
   select * into v_row from public.profiles where user_id = v_uid;
   if found then
     v_existed := true;
+    -- Restoring on a new install: the device's fresh guest id is being abandoned in
+    -- favour of the account's durable id. Delete the guest's leaderboard row so it
+    -- doesn't linger as a duplicate (also blocks smurfing via reinstall). Its score
+    -- was already merged into the account client-side + re-submitted under the durable id.
+    if p_player_id is not null and p_player_id <> v_row.player_id then
+      delete from public.players where id = p_player_id;
+    end if;
   else
     insert into public.profiles (user_id, player_id, friend_code, data)
     values (v_uid, p_player_id, p_friend_code, coalesce(p_data, '{}'::jsonb))

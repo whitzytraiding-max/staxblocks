@@ -154,7 +154,7 @@ func _sync_profile() -> void:
 			GameState.adopt_account(str(d.get("player_id", "")), str(d.get("friend_code", "")))
 			var data : Variant = d.get("data", {})
 			if data is Dictionary:
-				GameState.apply_cloud_profile(data)
+				GameState.apply_cloud_profile(data, true)   # restore → bring back the account's real name
 			# Push the merged union back up so the server has the latest
 			_post_rpc("push_profile",
 				{"p_data": GameState.cloud_snapshot(), "p_friend_code": GameState.friend_code},
