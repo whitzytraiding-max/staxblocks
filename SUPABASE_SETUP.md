@@ -68,7 +68,7 @@ language sql security definer set search_path = public as $$
          name, best_score, level
   from players
   order by best_score desc, updated_at asc
-  limit greatest(1, least(p_limit, 200));
+  limit greatest(1, least(p_limit, 1000));
 $$;
 
 -- The caller's global rank (1-based).

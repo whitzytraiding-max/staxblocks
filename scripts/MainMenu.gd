@@ -54,6 +54,7 @@ var cat_progress : int   = 0    # secret: tap S-T-A-X in order to toggle cat mod
 var settings_box : PanelContainer
 var play_pulse   : Tween
 var faller_layer : Node2D
+var menu_buttons : Array = []   # the main-menu button column; tracked so it can be rebuilt
 
 @onready var ui : CanvasLayer = $UI
 
@@ -1489,7 +1490,7 @@ func _set_lb_tab(tab: String) -> void:
 		return
 	lb_status.text = "Loading…"
 	if tab == "global":
-		Net.fetch_global(50)
+		Net.fetch_global(1000)   # show the full top 1000 (scrollable); server cap must allow it
 	else:
 		Net.fetch_friends(GameState.player_id)
 
@@ -1770,7 +1771,15 @@ func _add_press_effect(b: Button) -> void:
 		b.set_meta("press_tw", t)
 		t.tween_property(b, "position:y", float(b.get_meta("press_y")), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
 
-func _build_buttons() -> void:
+func _build_buttons(animate: bool = true) -> void:
+	# Rebuilding (e.g. a restore bumped the level) → clear the previous column first.
+	for old_b in menu_buttons:
+		if is_instance_valid(old_b):
+			old_b.queue_free()
+	menu_buttons.clear()
+	if play_pulse != null and play_pulse.is_valid():
+		play_pulse.kill()
+
 	var has_run := GameState.has_run_save()
 	var fade_in : Array = []
 	var primary : Button
@@ -1857,18 +1866,35 @@ func _build_buttons() -> void:
 		_open_settings())
 	fade_in.append(settings)
 
-	# Fade buttons in after the logo lands
+	menu_buttons = fade_in
+	# Fade buttons in after the logo lands. On a rebuild (animate=false) skip the
+	# intro fade — the freshly-unlocked button should just appear.
 	for btn in fade_in:
-		btn.modulate.a = 0.0
-		var t := create_tween()
-		t.tween_interval(0.85)
-		t.tween_property(btn, "modulate:a", 1.0, 0.35)
+		if animate:
+			btn.modulate.a = 0.0
+			var t := create_tween()
+			t.tween_interval(0.85)
+			t.tween_property(btn, "modulate:a", 1.0, 0.35)
+		else:
+			btn.modulate.a = 1.0
 
 	# Idle pulse on the primary button so it invites a tap
 	play_pulse = create_tween().set_loops()
 	play_pulse.tween_interval(1.2)
 	play_pulse.tween_property(primary, "scale", Vector2(1.05, 1.05), 0.45).set_trans(Tween.TRANS_SINE)
 	play_pulse.tween_property(primary, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_SINE)
+
+# Rebuild the menu button column so the leaderboard / biomes lock states reflect the
+# CURRENT level — used after a restore that may have jumped the level up, so the
+# unlocks show immediately instead of only after a relaunch or tapping PLAY.
+func _refresh_menu_buttons() -> void:
+	if menu_buttons.is_empty():
+		return   # menu not built yet (e.g. the first-run name prompt) — nothing to refresh
+	_build_buttons(false)
+	# The rebuilt buttons get appended last; keep the (hidden) settings panel on top
+	# so it still draws above them when opened.
+	if settings_box != null and is_instance_valid(settings_box):
+		ui.move_child(settings_box, ui.get_child_count() - 1)
 
 func _on_play_pressed(play: Button) -> void:
 	# A saved run exists → confirm before wiping it
@@ -2236,6 +2262,10 @@ func _on_auth_signed_in(restored: bool) -> void:
 	var t := create_tween()
 	t.tween_interval(1.4)
 	t.tween_callback(_close_account)
+	if restored:
+		# A restore can jump the level up — rebuild the menu (after the account panel
+		# closes) so leaderboard / biomes locks update immediately, no relaunch needed.
+		t.tween_callback(_refresh_menu_buttons)
 
 func _on_auth_failed(reason: String) -> void:
 	if is_instance_valid(account_status):
