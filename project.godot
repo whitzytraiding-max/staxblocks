@@ -13,7 +13,7 @@ config_version=5
 config/name="STAX"
 config/version="2.0.0"
 run/main_scene="res://scenes/MainMenu.tscn"
-config/features=PackedStringArray("4.6", "Forward Plus")
+config/features=PackedStringArray("4.7", "Forward Plus")
 boot_splash/bg_color=Color(0.039216, 0.031373, 0.078431, 1)
 boot_splash/show_image=false
 config/icon="res://icon.svg"
@@ -30,16 +30,16 @@ Ads="*res://scripts/Ads.gd"
 
 gdscript/warnings/integer_division=0
 
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/admob/plugin.cfg")
-
 [display]
 
 window/size/viewport_width=414
 window/size/viewport_height=896
 window/stretch/mode="canvas_items"
 window/handheld/orientation="portrait"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/admob/plugin.cfg")
 
 [gui]
 

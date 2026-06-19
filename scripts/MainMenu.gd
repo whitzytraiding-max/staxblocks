@@ -1891,10 +1891,11 @@ func _refresh_menu_buttons() -> void:
 	if menu_buttons.is_empty():
 		return   # menu not built yet (e.g. the first-run name prompt) — nothing to refresh
 	_build_buttons(false)
-	# The rebuilt buttons get appended last; keep the (hidden) settings panel on top
-	# so it still draws above them when opened.
-	if settings_box != null and is_instance_valid(settings_box):
-		ui.move_child(settings_box, ui.get_child_count() - 1)
+	# Rebuilt buttons get appended last (on top); raise every overlay panel back above
+	# them so none of them open BEHIND the menu buttons.
+	for panel in [ach_box, biome_box, lb_box, stats_box, settings_box]:
+		if panel != null and is_instance_valid(panel) and panel.get_parent() == ui:
+			ui.move_child(panel, ui.get_child_count() - 1)
 
 func _on_play_pressed(play: Button) -> void:
 	# A saved run exists → confirm before wiping it
@@ -2262,9 +2263,11 @@ func _on_auth_signed_in(restored: bool) -> void:
 	var t := create_tween()
 	t.tween_interval(1.4)
 	t.tween_callback(_close_account)
-	if restored:
-		# A restore can jump the level up — rebuild the menu (after the account panel
-		# closes) so leaderboard / biomes locks update immediately, no relaunch needed.
+	if restored and account_overlay != null and is_instance_valid(account_overlay):
+		# Only when the player restored from the OPEN account panel in-session — the menu
+		# was built at the OLD level so its locks are stale. On a SILENT boot-resume the
+		# menu is already built at the correct level, so rebuilding is pointless and would
+		# re-stack the buttons over the overlay panels (the behind-the-menu glitch).
 		t.tween_callback(_refresh_menu_buttons)
 
 func _on_auth_failed(reason: String) -> void:
