@@ -531,6 +531,12 @@ const THEMES: Array = [
 ]
 
 func _ready() -> void:
+	# Cap to 60 FPS. Without this, on a 120 Hz ProMotion device (iPhone 16 Pro etc.)
+	# the whole game renders at 120 — roughly double the GPU/CPU work, which ran the
+	# phone hot and drained the battery. 60 is plenty smooth for a block puzzle, so
+	# this is a big power saving with no perceptible quality loss. (Also set in
+	# project.godot; this guarantees it regardless of the project-setting key.)
+	Engine.max_fps = 60
 	_load()
 	check_unlocks(false)   # mark already-earned achievements done WITHOUT granting
 						   # XP — you only gain levels by playing, not by launching

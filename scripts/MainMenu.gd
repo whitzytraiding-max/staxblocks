@@ -791,6 +791,7 @@ func _populate_stats() -> void:
 func _open_stats() -> void:
 	_populate_stats()
 	stats_box.visible = true
+	ui.move_child(stats_box, ui.get_child_count() - 1)   # always open in front of the menu
 	stats_box.scale = Vector2(0.85, 0.85)
 	stats_box.pivot_offset = Vector2(185, 240)
 	var t := create_tween()
@@ -1114,6 +1115,7 @@ func _fmt_num(n: int) -> String:
 func _open_achievements() -> void:
 	_populate_achievements()
 	ach_box.visible = true
+	ui.move_child(ach_box, ui.get_child_count() - 1)   # always open in front of the menu
 	ach_box.scale = Vector2(0.85, 0.85)
 	ach_box.pivot_offset = Vector2(185, 280)
 	var t := create_tween()
@@ -1323,6 +1325,7 @@ func _open_biomes() -> void:
 	_refresh_biome_mode()
 	_populate_biomes()
 	biome_box.visible = true
+	ui.move_child(biome_box, ui.get_child_count() - 1)   # always open in front of the menu
 	biome_box.scale = Vector2(0.85, 0.85)
 	biome_box.pivot_offset = Vector2(185, 300)
 	var t := create_tween()
@@ -1473,6 +1476,7 @@ func _build_leaderboard_panel() -> void:
 
 func _open_leaderboard() -> void:
 	lb_box.visible = true
+	ui.move_child(lb_box, ui.get_child_count() - 1)   # always open in front of the menu
 	lb_box.scale = Vector2(0.85, 0.85)
 	lb_box.pivot_offset = Vector2(185, 300)
 	var t := create_tween()
@@ -2289,6 +2293,7 @@ func _on_auth_signed_out() -> void:
 
 func _open_settings() -> void:
 	settings_box.visible = true
+	ui.move_child(settings_box, ui.get_child_count() - 1)   # always open in front of the menu
 	settings_box.scale = Vector2(0.85, 0.85)
 	settings_box.pivot_offset = Vector2(150, 130)
 	var t := create_tween()
