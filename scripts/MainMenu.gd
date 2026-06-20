@@ -41,7 +41,7 @@ const STAR_R     := 23.0
 const SKIN_NAMES : Array = ["PASTEL", "NEON", "CIRCUIT", "BRICK", "CRYSTAL",
 	"CANDY", "FROST", "GRASS", "WATER", "LAVA", "WOOD", "GALAXY",
 	"HONEY", "RETRO", "BUBBLE", "STORM", "SAKURA", "METALS", "SLIME", "DISCO",
-	"AURORA", "PLASMA", "MARBLE", "MATRIX", "HOLOGRAM",
+	"AURORA", "PLASMA", "OPAL", "MATRIX", "HOLOGRAM",
 	"PRISM", "STAINED", "SYNTHWAVE", "AUTUMN", "WARP"]
 
 var orbs    : Array = []
@@ -55,6 +55,8 @@ var settings_box : PanelContainer
 var play_pulse   : Tween
 var faller_layer : Node2D
 var menu_buttons : Array = []   # the main-menu button column; tracked so it can be rebuilt
+var _launching    := false      # a game launch is committed → ignore further taps (anti-spam/freeze)
+var _confirm_open := false       # a "new game?" dialog is open → don't stack another
 
 @onready var ui : CanvasLayer = $UI
 
@@ -655,6 +657,9 @@ func _build_name_prompt() -> void:
 	vbox.add_child(go)
 
 	var confirm := func():
+		if _launching:
+			return
+		_launching = true
 		var n := input.text.strip_edges()
 		GameState.set_player_name(n if not n.is_empty() else "PLAYER")
 		Sfx.play_click()
@@ -669,6 +674,7 @@ func _build_name_prompt() -> void:
 			get_tree().change_scene_to_file("res://scenes/Game.tscn")
 		else:
 			_build_menu()   # menu intro plays now, on a clean screen
+			_launching = false
 	go.pressed.connect(confirm)
 	input.text_submitted.connect(func(_t): confirm.call())
 	input.grab_focus()
@@ -1902,6 +1908,8 @@ func _refresh_menu_buttons() -> void:
 			ui.move_child(panel, ui.get_child_count() - 1)
 
 func _on_play_pressed(play: Button) -> void:
+	if _launching:
+		return
 	# A saved run exists → confirm before wiping it
 	if GameState.has_run_save():
 		_confirm_new_game(play)
@@ -1911,6 +1919,9 @@ func _on_play_pressed(play: Button) -> void:
 	_launch(play)
 
 func _confirm_new_game(play: Button) -> void:
+	if _confirm_open or _launching:
+		return
+	_confirm_open = true
 	Sfx.play_click()
 	var dim := ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.55)
@@ -1968,9 +1979,12 @@ func _confirm_new_game(play: Button) -> void:
 		_launch(play))
 	no.pressed.connect(func():
 		Sfx.play_click()
+		_confirm_open = false
 		dim.queue_free())
 
 func _on_continue_pressed(cont: Button) -> void:
+	if _launching:
+		return
 	if not GameState.load_run_from_disk():
 		# Run file unreadable — fall back to a fresh game
 		GameState.has_save = false
@@ -1978,6 +1992,9 @@ func _on_continue_pressed(cont: Button) -> void:
 	_launch(cont)
 
 func _launch(btn: Button) -> void:
+	if _launching:
+		return
+	_launching = true
 	Sfx.play_click()
 	if play_pulse:
 		play_pulse.kill()

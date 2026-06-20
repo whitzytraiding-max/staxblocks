@@ -518,7 +518,7 @@ const THEMES: Array = [
 	{"bg": Color(0.11, 0.05, 0.15), "orb": Color(0.90, 0.40, 1.00, 0.08), "accent": Color(1.00, 0.50, 0.90), "name": "DANCE FLOOR"},
 	{"bg": Color(0.04, 0.07, 0.16), "orb": Color(0.30, 1.00, 0.70, 0.07), "accent": Color(0.50, 1.00, 0.85), "name": "AURORA SKY"},
 	{"bg": Color(0.08, 0.04, 0.16), "orb": Color(0.70, 0.40, 1.00, 0.08), "accent": Color(0.85, 0.60, 1.00), "name": "PLASMA FIELD"},
-	{"bg": Color(0.26, 0.24, 0.30), "orb": Color(1.00, 1.00, 1.00, 0.06), "accent": Color(0.92, 0.90, 0.96), "name": "MARBLE HALL"},
+	{"bg": Color(0.20, 0.22, 0.30), "orb": Color(1.00, 1.00, 1.00, 0.06), "accent": Color(0.86, 0.93, 0.99), "name": "OPAL"},
 	{"bg": Color(0.02, 0.08, 0.04), "orb": Color(0.20, 1.00, 0.40, 0.07), "accent": Color(0.40, 1.00, 0.50), "name": "DATA STREAM"},
 	{"bg": Color(0.06, 0.07, 0.14), "orb": Color(0.40, 0.90, 1.00, 0.08), "accent": Color(0.60, 0.90, 1.00), "name": "HOLO DECK"},
 	{"bg": Color(0.10, 0.10, 0.16), "orb": Color(1.00, 1.00, 1.00, 0.07), "accent": Color(0.80, 0.95, 1.00), "name": "PRISM"},

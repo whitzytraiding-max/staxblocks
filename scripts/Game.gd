@@ -426,7 +426,7 @@ func _spawn_pieces() -> void:
 	# ~10k upward the board stops being constantly emptied for you.
 	var forced_clear : Array = []
 	var gift_chance : float = 1.0 if sets_given < EARLY_CLEAR_SETS \
-		else lerpf(0.15, 0.0, _difficulty())
+		else lerpf(0.20, 0.0, _difficulty())
 	if randf() < gift_chance:
 		forced_clear = _pick_board_clear_shape()
 
@@ -474,7 +474,7 @@ func _progression() -> float:
 const DIFF_START := 2.0        # sets before the sets-ramp starts climbing (= early phase)
 const DIFF_LEN   := 14.0       # sets over which the sets-ramp climbs to max (bites fast)
 const DIFF_SCORE_START := 1000.0   # score where the score-ramp begins (bites very early)
-const DIFF_SCORE_LEN   := 9000.0   # score span to max (~10k → fully hard)
+const DIFF_SCORE_LEN   := 11000.0  # score span to max (~12k → fully hard)
 func _difficulty() -> float:
 	var by_sets  := (float(sets_given) - DIFF_START) / DIFF_LEN
 	var by_score := (float(score) - DIFF_SCORE_START) / DIFF_SCORE_LEN
@@ -491,7 +491,7 @@ func _deep() -> float:
 # a helpful one. Climbs with both ramps so a long high-score run keeps getting meaner;
 # capped below 1.0 so there's always a sliver of breathing room (and the rescue power).
 func _hard_bias() -> float:
-	return clampf(lerpf(0.0, 0.62, _difficulty()) + lerpf(0.0, 0.26, _deep()), 0.0, 0.82)
+	return clampf(lerpf(0.0, 0.54, _difficulty()) + lerpf(0.0, 0.22, _deep()), 0.0, 0.72)
 
 # The meanest fitting piece: the more cells it has and the FEWER places it fits, the
 # more it crowds the board and strands gaps. Small random jitter keeps it from handing
@@ -528,7 +528,7 @@ func _wants_clear() -> bool:
 	# difficulty, then keeps growing into the deep game so the board stays full and
 	# the pressure is real at high scores.
 	var drought : int = int(round(
-		lerpf(float(CLEAR_DROUGHT), 70.0, _difficulty()) + lerpf(0.0, 40.0, _deep())))
+		lerpf(float(CLEAR_DROUGHT), 60.0, _difficulty()) + lerpf(0.0, 32.0, _deep())))
 	return sets_given < EARLY_CLEAR_SETS or sets_since_clear >= drought
 
 # Fraction of the board currently filled (0..1).
@@ -561,7 +561,7 @@ const SMART_FADE_MOVES := 10.0
 # Early game = a fast "clear the whole board" puzzle. For the first few sets we
 # keep the board SMALL (no big builder dumps) and try to hand the player a piece
 # that can empty the board, so full board-clears happen constantly up front.
-const EARLY_CLEAR_SETS   := 2
+const EARLY_CLEAR_SETS   := 3
 const EARLY_CLEAR_CHANCE := 1.0
 # After this many sets with no full board clear, briefly favour small clearing
 # pieces again (a "drain") to set up another board clear — keeps board clears
@@ -1051,7 +1051,7 @@ func _fire_power() -> void:
 		meter = 0.0
 		_power_gravity()
 	elif meter >= METER_LASER:
-		meter -= METER_LASER
+		meter = 0.0          # double bomb spends the whole meter
 		_power_twin_bomb()
 	elif meter >= METER_BOMB:
 		meter -= METER_BOMB
@@ -1074,6 +1074,25 @@ func _random_board_target() -> Vector2i:
 	if filled.is_empty():
 		return Vector2i(randi() % GRID_COLS, randi() % GRID_ROWS)
 	return filled[randi() % filled.size()]
+
+# A board cell at least `min_sep` cells (Chebyshev) away from `from`, preferring a
+# filled cell so the second twin bomb hits something AND stays visually separated.
+func _far_target(from: Vector2i, min_sep: int) -> Vector2i:
+	var far_filled : Array = []
+	var far_any    : Array = []
+	for r in GRID_ROWS:
+		for c in GRID_COLS:
+			if maxi(absi(c - from.x), absi(r - from.y)) < min_sep:
+				continue
+			var cc := Vector2i(c, r)
+			far_any.append(cc)
+			if grid.cells[r][c] != null:
+				far_filled.append(cc)
+	if not far_filled.is_empty():
+		return far_filled[randi() % far_filled.size()]
+	if not far_any.is_empty():
+		return far_any[randi() % far_any.size()]
+	return Vector2i((from.x + GRID_COLS / 2) % GRID_COLS, (from.y + GRID_ROWS / 2) % GRID_ROWS)
 
 func _power_bomb() -> void:
 	power_busy = true
@@ -1098,15 +1117,10 @@ func _power_bomb() -> void:
 
 func _power_twin_bomb() -> void:
 	power_busy = true
-	# Twice the first ability: TWO bombs at two DIFFERENT random spots.
+	# Twin bomb: two bombs in clearly DIFFERENT places — t2 is at least 3 cells from t1
+	# so the two 3x3 blasts never overlap (no "both bombs in the same spot").
 	var t1 := _random_board_target()
-	var t2 := _random_board_target()
-	var tries := 0
-	while t2 == t1 and tries < 30:
-		t2 = Vector2i(randi() % GRID_COLS, randi() % GRID_ROWS)
-		tries += 1
-	if t2 == t1:
-		t2 = Vector2i((t1.x + 1) % GRID_COLS, t1.y)   # guaranteed never the same spot
+	var t2 := _far_target(t1, 3)
 	var targets : Array = [t1, t2]
 
 	for tg : Vector2i in targets:
@@ -1925,15 +1939,15 @@ func _draw_bg_pattern() -> void:
 				var pls : float = 0.5 + 0.5 * sin(pt * 2.0 + float(i))
 				draw_circle(Vector2(ox, oy), 30.0 + pls * 12.0, Color(0.7, 0.4, 1.0, 0.05))
 				draw_circle(Vector2(ox, oy), 11.0, Color(0.85, 0.6, 1.0, 0.07))
-		22:  # Marble Hall — large soft drifting veins
-			for i in 4:
-				var vx : float = 60.0 + float(i) * 110.0
-				var pts := PackedVector2Array()
-				for k in 9:
-					var y : float = float(k) / 8.0 * 896.0
-					pts.append(Vector2(vx + sin(float(k) * 0.7 + float(i) * 2.0) * 42.0, y))
-				draw_polyline(pts, Color(0.40, 0.38, 0.46, 0.05), 9.0)
-				draw_polyline(pts, Color(1, 1, 1, 0.05), 3.0)
+		22:  # Opal — soft iridescent colour clouds drifting
+			var dt22 := Time.get_ticks_msec() * 0.001
+			for i in 6:
+				var ox : float = 70.0 + float(i) * 60.0
+				var oy : float = 170.0 + float(i) * 110.0 + sin(dt22 * 0.4 + float(i) * 1.4) * 45.0
+				var oh : float = fmod(float(i) * 0.17 + dt22 * 0.04, 1.0)
+				var oc := Color.from_hsv(oh, 0.45, 1.0)
+				draw_circle(Vector2(ox, oy), 70.0, Color(oc.r, oc.g, oc.b, 0.045))
+				draw_circle(Vector2(ox, oy), 24.0, Color(oc.r, oc.g, oc.b, 0.05))
 		23:  # Data Stream — falling green code columns
 			var dt3 := Time.get_ticks_msec() * 0.001
 			for c in 12:
